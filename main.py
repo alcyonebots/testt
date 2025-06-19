@@ -1,53 +1,68 @@
-import asyncio
-from telethon import TelegramClient
+from telethon import TelegramClient, functions, types
 from telethon.sessions import StringSession
 
-# Replace these with your actual API ID and hash
-API_ID = 29872536  # Replace with your API ID
-API_HASH = '65e1f714a47c0879734553dc460e98d6'  # Replace with your API hash
-
-# Use a string session or set to None for phone login
-SESSION_STRING = None  # or put your session string here
-
-# DC1 IP address and port
-DC1_ID = 1
-DC1_IP = '149.154.175.50'
-DC1_PORT = 443
+api_id = 18136872  # Replace with your real API ID
+api_hash = '312d861b78efcd1b02183b2ab52a83a4'  # Replace with your real API Hash
 
 async def main():
-    if SESSION_STRING:
-        session = StringSession(SESSION_STRING)
-    else:
-        session = StringSession()
+    print("== Telegram Message Reporter ==")
 
-    client = TelegramClient(session, API_ID, API_HASH)
+    phone = input("Enter your phone number (with +91...): ")
+
+    # Start temporary client session
+    client = TelegramClient(StringSession(), api_id, api_hash)
 
     await client.connect()
-
     if not await client.is_user_authorized():
-        print("Logging in...")
-        await client.send_code_request(input("Enter your phone number: "))
-        await client.sign_in(code=input("Enter the code you received: "))
+        await client.send_code_request(phone)
+        code = input("Enter the code you received: ")
+        await client.sign_in(phone, code)
 
-    # Forcefully switch to DC1
-    print(f"Changing session to DC1...")
-    client.session.set_dc(dc_id=DC1_ID, server_address=DC1_IP, port=DC1_PORT)
-    client.session.save()
+    # Get the chat link or username
+    target = input("Enter the username or chat link of the sender: ").strip()
+    msg_id = int(input("Enter the message ID to report: ").strip())
 
-    # Disconnect and reconnect to apply new DC
+    # Resolve entity
+    try:
+        peer = await client.get_entity(target)
+    except Exception as e:
+        print("Error finding user/chat:", e)
+        await client.disconnect()
+        return
+
+    try:
+        message = await client.get_messages(peer, ids=msg_id)
+    except Exception as e:
+        print("Could not fetch message:", e)
+        await client.disconnect()
+        return
+
+    # Show message details
+    print("\n== Message Details ==")
+    print(f"Message ID: {message.id}")
+    print(f"Sender ID: {message.sender_id}")
+    print(f"Date: {message.date}")
+    print(f"Content:\n{message.text or '[No text]'}")
+
+    confirm = input("\nDo you want to report this message? (yes/no): ").strip().lower()
+    if confirm != "yes":
+        print("Cancelled.")
+        await client.disconnect()
+        return
+
+    try:
+        report = await client(functions.messages.ReportRequest(
+            peer=peer,
+            id=[msg_id],
+            reason=types.InputReportReasonViolence(),  # You can change the reason
+            message="report: offensive content."
+        ))
+        print("✅ Report submitted:", report)
+    except Exception as e:
+        print("❌ Failed to report:", e)
+
     await client.disconnect()
-    await client.connect()
 
-    # Get current session DC ID
-    current_dc = client.session.dc_id
-    print(f"Current DC ID: {current_dc}")
-
-    if current_dc == DC1_ID:
-        print("✅ Successfully connected to DC1.")
-    else:
-        print("❌ Not connected to DC1.")
-
-    await client.disconnect()
-
+# ------------- Run it -------------
+import asyncio
 asyncio.run(main())
-  
